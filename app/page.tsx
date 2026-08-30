@@ -4,9 +4,14 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import HangingKeys from '@/components/HangingKeys';
+import HumanTypingPlaceholder from '@/components/HumanTypingPlaceholder';
+import AmbientParallaxKeys from '@/components/AmbientParallaxKeys';
+import SmartClipboardDetector from '@/components/SmartClipboardDetector';
+import LiquidMorphButton from '@/components/LiquidMorphButton';
 
 export default function Home() {
   const [url, setUrl] = useState('');
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Extracting key...');
   const [subStatusMessage, setSubStatusMessage] = useState('Please wait while we process your request.');
@@ -169,14 +174,8 @@ export default function Home() {
 
   return (
     <div className="relative min-h-[100dvh] w-full flex flex-col items-center justify-between p-3.5 sm:p-6 lg:p-8 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-x-hidden font-sans">
-      {/* Ambient Glowing Keys with responsive mobile scaling */}
-      <div className="pointer-events-none absolute -bottom-6 -left-6 w-48 sm:w-80 lg:w-[360px] aspect-square opacity-70 sm:opacity-75 -rotate-45 select-none z-0 blur-[6px] sm:blur-[9px] drop-shadow-[0_0_45px_rgba(56,189,248,0.65)]">
-        <img src="/images/key.webp" alt="" className="w-full h-full object-contain" />
-      </div>
-
-      <div className="pointer-events-none absolute -bottom-8 -right-8 w-52 sm:w-88 lg:w-[400px] aspect-square opacity-70 sm:opacity-75 -rotate-[115deg] select-none z-0 blur-[6px] sm:blur-[9px] drop-shadow-[0_0_45px_rgba(56,189,248,0.65)]">
-        <img src="/images/key.webp" alt="" className="w-full h-full object-contain" />
-      </div>
+      {/* 3D Mouse Parallax & Device Gyroscope Ambient Floating Keys */}
+      <AmbientParallaxKeys />
 
       {/* Top Navbar */}
       <header className="relative z-10 w-full max-w-5xl flex items-center justify-between py-2 sm:py-3">
@@ -295,49 +294,56 @@ export default function Home() {
         </div>
 
         {/* Subtitle */}
-        <p className="text-center text-xs sm:text-base md:text-lg text-sky-100 font-normal mt-2 sm:mt-3 mb-6 sm:mb-9 drop-shadow-sm font-sans tracking-[-0.01em]">
+        <p className="text-center text-xs sm:text-base md:text-lg text-sky-100 font-normal mt-2 sm:mt-3 mb-4 sm:mb-6 drop-shadow-sm font-sans tracking-[-0.01em]">
           Paste a link or generate a key automatically.
         </p>
 
+        {/* Smart Clipboard Auto-Detector */}
+        <SmartClipboardDetector
+          currentUrl={url}
+          onSelectUrl={(pastedUrl, autoStart) => {
+            setUrl(pastedUrl);
+            if (autoStart) {
+              startExtraction(pastedUrl, false);
+            }
+          }}
+        />
+
         {/* Dynamic Smart URL Input Form Pill */}
         <form onSubmit={handleExtractSubmit} className="w-full max-w-xl mb-6 sm:mb-8">
-          <div className="glass-pill rounded-full p-1.5 sm:p-2 flex items-center gap-1.5 sm:gap-2 transition-all shadow-lg focus-within:ring-2 focus-within:ring-white/50">
+          <div className="glass-pill rounded-full p-1.5 sm:p-2 flex items-center gap-1.5 sm:gap-2 transition-all shadow-[0_2px_16px_rgba(255,255,255,0.08),inset_0_1px_1px_rgba(255,255,255,0.35)] focus-within:shadow-[0_2px_20px_rgba(255,255,255,0.18),inset_0_1px_1px_rgba(255,255,255,0.5)] focus-within:ring-2 focus-within:ring-white/50">
             <div className="pl-2 sm:pl-3 text-sky-200 flex items-center shrink-0">
               <i className="f7-icons text-base sm:text-lg text-sky-200 leading-none">link</i>
             </div>
-            <input
-              ref={inputRef}
-              type="text"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com/resource"
-              disabled={loading}
-              className="flex-1 min-w-0 bg-transparent text-white placeholder-sky-200/70 text-xs sm:text-base outline-none px-1 py-1 font-normal disabled:opacity-50"
-            />
+            <div className="relative flex-1 min-w-0 flex items-center">
+              {!url && (
+                <HumanTypingPlaceholder isFocused={isInputFocused} />
+              )}
+              <input
+                ref={inputRef}
+                type="text"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                disabled={loading}
+                className="w-full bg-transparent text-white text-xs sm:text-base outline-none px-1 py-1 font-normal disabled:opacity-50 relative z-10"
+              />
+            </div>
             {url && (
               <button
                 type="button"
                 onClick={() => setUrl('')}
-                className="text-white/60 hover:text-white p-1 rounded-full flex items-center shrink-0 cursor-pointer"
+                className="text-white/60 hover:text-white p-1 rounded-full flex items-center shrink-0 cursor-pointer relative z-20"
               >
                 <i className="f7-icons text-sm sm:text-base text-white/70 leading-none">xmark_circle_fill</i>
               </button>
             )}
-            <button
-              type="button"
+            <LiquidMorphButton
+              hasUrl={!!url.trim()}
+              loading={loading}
               onClick={handleExtractSubmit}
-              disabled={loading}
-              className="bg-white hover:bg-white/90 active:scale-95 text-slate-900 font-semibold px-3.5 sm:px-6 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm shadow-md transition-all flex items-center gap-1 sm:gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap cursor-pointer shrink-0"
-            >
-              {url.trim() ? (
-                <>
-                  <span>Extract Key</span>
-                  <i className="f7-icons text-[11px] sm:text-xs text-slate-900 leading-none font-bold">chevron_right</i>
-                </>
-              ) : (
-                <span>Auto-Generate</span>
-              )}
-            </button>
+            />
           </div>
         </form>
 
@@ -445,7 +451,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={handleCopyKey}
-                  className="relative z-10 bg-white hover:bg-white/95 active:scale-95 text-slate-900 font-semibold px-4 sm:px-6 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm shadow-[0_4px_16px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 cursor-pointer"
+                  className="relative z-10 bg-white hover:bg-white/95 active:scale-95 text-slate-900 font-semibold px-4 sm:px-6 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm shadow-[0_2px_12px_rgba(255,255,255,0.22)] hover:shadow-[0_3px_16px_rgba(255,255,255,0.35)] transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 cursor-pointer"
                 >
                   {copied ? (
                     <>

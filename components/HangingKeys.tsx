@@ -1,30 +1,36 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function HangingKeys() {
   const [isHanging, setIsHanging] = useState(false);
+  const [fallState, setFallState] = useState<'attached' | 'falling' | 'dropping_in'>('attached');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const raiseTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+      if (raiseTimerRef.current) clearTimeout(raiseTimerRef.current);
     };
   }, []);
 
   const triggerFallWithAutoRaise = () => {
+    if (fallState !== 'attached') return;
     setIsHanging(true);
     if (timerRef.current) clearTimeout(timerRef.current);
 
-    // Auto-raise back up after 2.8 seconds
+    // Auto-raise back up after 3.2 seconds if not broken
     timerRef.current = setTimeout(() => {
       setIsHanging(false);
-    }, 2800);
+    }, 3200);
   };
 
   const handleMouseEnter = () => {
-    // Only trigger hover on non-touch devices
+    if (fallState !== 'attached') return;
     if (window.matchMedia('(hover: hover)').matches) {
       if (timerRef.current) clearTimeout(timerRef.current);
       setIsHanging(true);
@@ -32,17 +38,18 @@ export default function HangingKeys() {
   };
 
   const handleMouseLeave = () => {
-    // Only handle mouse leave on non-touch devices
+    if (fallState !== 'attached') return;
     if (window.matchMedia('(hover: hover)').matches) {
       if (timerRef.current) clearTimeout(timerRef.current);
       setIsHanging(false);
     }
   };
 
-  const handleClick = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleBoxClick = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
+    if (fallState !== 'attached') return;
+
     if (isHanging) {
-      // If already hanging, click raises it back immediately
       if (timerRef.current) clearTimeout(timerRef.current);
       setIsHanging(false);
     } else {
@@ -50,29 +57,105 @@ export default function HangingKeys() {
     }
   };
 
+  // Break hinge and execute full physical cycle
+  const handleHingeClick = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    if (fallState !== 'attached') return;
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    if (raiseTimerRef.current) clearTimeout(raiseTimerRef.current);
+
+    // 1. Free fall downward with full opacity
+    setFallState('falling');
+
+    // 2. After dropping off-screen (1.4s), drop down from top and latch onto pivot with SHM
+    resetTimerRef.current = setTimeout(() => {
+      setFallState('dropping_in');
+
+      // 3. After SHM oscillations damp out and come to a complete rest (2.6s), lift against gravity back to 10°
+      raiseTimerRef.current = setTimeout(() => {
+        setFallState('attached');
+        setIsHanging(false);
+      }, 2600);
+    }, 1400);
+  };
+
   return (
     <span 
-      className="relative inline-block select-none cursor-pointer group align-baseline"
+      className="relative inline-block select-none align-baseline"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      onClick={handleClick}
-      onTouchEnd={handleClick}
     >
-      {/* Invisible expanded hit area so hovering/tapping remains active during the swinging motion */}
-      <span className="absolute -inset-x-6 -inset-y-8 z-0 pointer-events-auto" />
+      {/* Expanded hit area for normal state */}
+      {fallState === 'attached' && (
+        <span 
+          className="absolute -inset-x-6 -inset-y-8 z-0 pointer-events-auto cursor-pointer"
+          onClick={handleBoxClick}
+          onTouchEnd={handleBoxClick}
+        />
+      )}
 
-      {/* Motion Box hinged at Top-Left (0% 0%) Wall Anchor with 10deg default tilt */}
+      {/* Motion Box with Physics Simulation */}
       <motion.span
-        className="relative inline-block px-1.5 py-0 z-10 selection-box-wrap"
-        initial={{ rotate: 10 }}
-        animate={{ 
-          rotate: isHanging ? 70 : 10,
-          y: isHanging ? 3 : 0,
-        }}
+        key={fallState}
+        className="relative inline-block px-1.5 py-0 z-10 selection-box-wrap cursor-pointer"
+        onClick={handleBoxClick}
+        onTouchEnd={handleBoxClick}
+        initial={
+          fallState === 'falling'
+            ? { rotate: isHanging ? 70 : 10, y: isHanging ? 3 : 0, x: 0, opacity: 1 }
+            : fallState === 'dropping_in'
+            ? { rotate: 5, y: -450, x: 0, opacity: 1 }
+            : { rotate: 70, y: 3, x: 0, opacity: 1 }
+        }
+        animate={
+          fallState === 'falling'
+            ? { 
+                y: 1200,
+                x: 80,
+                rotate: 150,
+                opacity: 1, // 100% solid opacity during fall
+              }
+            : fallState === 'dropping_in'
+            ? { 
+                y: 3,
+                rotate: 70, // Settles at natural hanging angle after SHM oscillations
+                opacity: 1,
+              }
+            : { 
+                // Return against gravity back to original 10deg resting tilt
+                rotate: isHanging ? 70 : 10,
+                y: isHanging ? 3 : 0,
+                x: 0,
+                opacity: 1,
+              }
+        }
         transition={
-          isHanging
+          fallState === 'falling'
             ? {
-                // Realistic Damped Pendulum Swing Physics
+                // Free fall gravitational acceleration
+                duration: 1.0,
+                ease: [0.45, 0, 0.9, 0.4],
+              }
+            : fallState === 'dropping_in'
+            ? {
+                // Drop & catch pivot: rapid vertical drop, then pure SHM pendulum oscillations
+                y: {
+                  duration: 0.32,
+                  ease: [0.33, 0, 0.67, 1],
+                },
+                rotate: {
+                  type: 'spring',
+                  stiffness: 48, // Low stiffness for natural wide pendulum swing
+                  damping: 3.8,  // Low damping allows multiple SHM back-and-forth cycles
+                  mass: 1.8,     // Heavy mass for realistic inertia
+                  restDelta: 0.001,
+                },
+              }
+            : isHanging
+            ? {
+                // Interactive hanging spring
                 type: 'spring',
                 stiffness: 75,
                 damping: 5.2,
@@ -80,15 +163,15 @@ export default function HangingKeys() {
                 restDelta: 0.001,
               }
             : {
-                // Return Spring (Snappy restoration to 10deg resting tilt)
+                // Move against gravity: smooth, controlled upward lift back to resting 10deg
                 type: 'spring',
-                stiffness: 180,
-                damping: 15,
-                mass: 0.9,
+                stiffness: 120,
+                damping: 14,
+                mass: 1.1,
               }
         }
         style={{
-          transformOrigin: '0% 0%',
+          transformOrigin: fallState === 'falling' ? '30% 50%' : '0% 0%',
           display: 'inline-block',
         }}
       >
@@ -100,13 +183,13 @@ export default function HangingKeys() {
           }}
         />
 
-        {/* Top-Right Loose Pin (Falls along with box) */}
-        <span className={`absolute -top-[5px] -right-[6px] w-[9px] h-[9px] rounded-full bg-white pointer-events-none transition-opacity duration-150 ${isHanging ? 'opacity-50' : 'opacity-100'}`} />
+        {/* Top-Right Loose Pin */}
+        <span className={`absolute -top-[5px] -right-[6px] w-[9px] h-[9px] rounded-full bg-white pointer-events-none transition-opacity duration-150 ${isHanging || fallState === 'dropping_in' ? 'opacity-50' : 'opacity-100'}`} />
 
-        {/* Bottom-Right Handle Pin (Swings with box) */}
+        {/* Bottom-Right Handle Pin */}
         <span className="absolute -bottom-[5px] -right-[6px] w-[9px] h-[9px] rounded-full bg-white pointer-events-none" />
 
-        {/* Bottom-Left Handle Pin (Swings with box) */}
+        {/* Bottom-Left Handle Pin */}
         <span className="absolute -bottom-[5px] -left-[6px] w-[9px] h-[9px] rounded-full bg-white pointer-events-none" />
 
         {/* The Text 'keys' */}
@@ -115,10 +198,25 @@ export default function HangingKeys() {
         </span>
       </motion.span>
 
-      {/* Fixed Wall Anchor Pivot Pin (Top-Left Nail that stays on the wall) */}
-      <span 
-        className="absolute -top-[5px] -left-[6px] w-[10px] h-[10px] rounded-full bg-white pointer-events-none z-30 shadow-[0_0_10px_rgba(255,255,255,0.8)]" 
-      />
+      {/* Fixed Wall Anchor Pivot Pin (Pure white, exact same 9px size) */}
+      <AnimatePresence>
+        {fallState !== 'falling' && (
+          <motion.button
+            type="button"
+            onClick={handleHingeClick}
+            onTouchEnd={handleHingeClick}
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute -top-[5px] -left-[6px] w-[9px] h-[9px] rounded-full bg-white z-30 cursor-pointer pointer-events-auto shadow-[0_0_10px_rgba(255,255,255,0.85)] active:scale-90 transition-transform"
+            aria-label="Click hinge to break"
+          >
+            {/* Expanded click target */}
+            <span className="absolute -inset-3.5 z-40" />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </span>
   );
 }
