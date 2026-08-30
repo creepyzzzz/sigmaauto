@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#0284c7"/>
+  <circle cx="256" cy="256" r="210" fill="url(#grad)" opacity="0.3"/>
+  <path d="M190 280C167.909 280 150 262.091 150 240C150 217.909 167.909 200 190 200C212.091 200 230 217.909 230 240C230 262.091 212.091 280 190 280ZM274 200C261.5 163.5 226.5 140 190 140C134.772 140 90 184.772 90 240C90 295.228 134.772 340 190 340C226.5 340 261.5 316.5 274 280H330V340H390V280H430V200H274Z" fill="#FFFFFF"/>
+  <defs>
+    <radialGradient id="grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

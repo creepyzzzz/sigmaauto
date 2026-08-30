@@ -1,90 +1,63 @@
-Python Key Extractor Script
+# Keyo 🔑 — Instant Link Bypass & Key Extractor
 
-This script automates the process of discovering and extracting a key by following a multi-step flow.
+A modern, high-speed Progressive Web App (PWA) and automated resolver designed to bypass link shortener countdowns, decrypt verification sessions, and extract access keys instantly.
 
-It begins by querying a target URL, decoding encrypted headers to find a base API URL, and then hitting an auth endpoint on that API to get a keyUrl. This keyUrl is then routed to the appropriate handler (e.g., nanolinks, arolinks, lksfy) to solve its specific redirect/decryption challenge and extract the final key.
+---
 
-Compatibility
+## Features
 
-This script is designed to run on Windows and in Termux (on Android).
+- **Apple-Grade Liquid Glass UI**: SF Pro Rounded & Display typography, dynamic viewport responsiveness, fluid spring physics, and minimal Apple aesthetic.
+- **PWA Ready**: Installable directly on iOS (Safari) and Android (Chrome) as a native standalone application.
+- **Real-Time Stream Engine**: Server-Sent Events (SSE) providing live countdowns and bypass progress logs.
+- **Automated Bypass Resolvers**:
+  - **Lksfy**: Double Base64 + AES-256-CBC session decrypt & PKCS#7 unpadding.
+  - **Nanolinks**: Cookie session & rapid redirect traversal.
+  - **Arolinks / Adrinolinks**: Intermediate token injection & referrer verification.
+  - **Telegram**: Start code & verification parameter decoding.
+- **1-Click Cloud Auto-Generation**: Instant access token synthesis without requiring a manual link.
 
-Note for Termux users: You may need to use the --ssl-bypass flag to avoid SSL verification errors.
+---
 
-Dependencies
+## Getting Started
 
-Required:
+### Prerequisites
+- Node.js 18+ (Node.js 20 or 22 recommended)
+- npm, pnpm, or yarn
 
-requests
+### Local Development
 
-Optional (but recommended):
+```bash
+# Install dependencies
+npm install
 
-pycryptodome: Required for handling lksfy.com links.
+# Run development server
+npm run dev
+```
 
-colorama: For colored console output.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-Installation
+---
 
-Optional: Setup Virtual Environment (Recommended)
+## Deployment (Vercel)
 
-Using a virtual environment (venv) is a best practice to avoid installing packages globally and prevent version conflicts between projects.
+1. Push your repository to GitHub / GitLab.
+2. Import the project into [Vercel](https://vercel.com).
+3. Set `NEXT_PUBLIC_SITE_URL` to your domain (e.g. `https://keyo.vercel.app`).
+4. Deploy! Next.js serverless functions will automatically handle the backend extraction routes.
 
-Create the environment (run once):
+---
 
-python3 -m venv .venv
+## Standalone Python Script (CLI / Termux)
 
+The original CLI tool is located in the [`scripts/`](file:///d:/WORK/sigmaauto/scripts) folder:
 
-Activate it (run each time you work on the project):
+```bash
+# Install python dependencies
+pip install -r scripts/requirements.txt
 
-Termux / Linux / macOS:
+# Extract key from a direct URL
+python scripts/sigmastudy.py --direct-url "https://lksfy.com/iZ3za"
 
-source .venv/bin/activate
-
-
-Windows:
-
-.\.venv\Scripts\activate
-
-
-(You can run deactivate when you are finished.)
-
-Install Packages
-
-With your virtual environment active (or globally if you skipped that step), install the dependencies from requirements.txt:
-
-pip install -r requirements.txt
-
-
-Or manually:
-
-pip install requests pycryptodome colorama
-
-
-Usage
-
-Default Flow
-
-Simply execute the script:
-
-python3 sigmastudy.py
-
-
-Process a Direct URL
-
-If you already have the intermediate link (keyUrl), you can process it directly:
-
-python3 sigmastudy.py --direct-url "<URL>"
-
-
-Flags
-
---ssl-bypass: Disable SSL certificate verification. (Often required for Termux).
-
---debug: Show verbose debug and trace output.
-
---direct-url <URL>: Skip the initial discovery and process the given URL directly.
-
-Environment Variables
-
-TARGET_URL: Set this to override the default initial discovery URL (which is https://zoo0.pages.dev).
-
-TARGET_URL="<TARGET_URL>" python3 sigmastudy.py
+# Run default automatic discovery
+python scripts/sigmastudy.py --default-flow
+```

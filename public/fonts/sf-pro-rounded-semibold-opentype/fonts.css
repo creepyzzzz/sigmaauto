@@ -1,0 +1,8 @@
+@font-face {
+  font-family: 'sf-pro-rounded-semibold-opentype-1_ufonts.com';
+  src:        url('sf-pro-rounded-semibold-opentype-1_ufonts.com.woff2') format('woff2'),
+       url('sf-pro-rounded-semibold-opentype-1_ufonts.com.woff') format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}

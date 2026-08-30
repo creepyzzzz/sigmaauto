@@ -1,0 +1,141 @@
+@import 'framework7-icons/css/framework7-icons.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'SF Pro Rounded';
+  src: url('/fonts/sf-pro-rounded-semibold-opentype/sf-pro-rounded-semibold-opentype-1_ufonts.com.woff2') format('woff2'),
+       url('/fonts/sf-pro-rounded-semibold-opentype/sf-pro-rounded-semibold-opentype-1_ufonts.com.woff') format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SFPRODISPLAYREGULAR.OTF') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SFPRODISPLAYMEDIUM.OTF') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  src: url('/fonts/SFPRODISPLAYBOLD.OTF') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --primary-blue-top: #0ea5e9;
+  --primary-blue-mid: #0284c7;
+  --primary-blue-bot: #0369a1;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0284c7;
+  background-image: url('/images/web-bg.webp');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: #ffffff;
+  overflow-x: hidden;
+}
+
+/* Custom dashed selection box with 10deg clockwise rotation and enlarged flat circular handles */
+.selection-box {
+  position: relative;
+  display: inline-block;
+  padding: 0px 6px;
+  margin-top: 2px;
+  transform: rotate(10deg);
+  transform-origin: center;
+}
+
+.selection-box::before {
+  content: '';
+  position: absolute;
+  inset: -2px -4px;
+  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' stroke='rgba(255, 255, 255, 0.85)' stroke-width='1.5' stroke-dasharray='8%2c 5' stroke-dashoffset='0' stroke-linecap='round'/%3e%3c/svg%3e");
+  pointer-events: none;
+}
+
+.selection-box .handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  pointer-events: none;
+}
+
+.selection-box .handle-tl { top: -6.5px; left: -8.5px; }
+.selection-box .handle-tr { top: -6.5px; right: -8.5px; }
+.selection-box .handle-bl { bottom: -6.5px; left: -8.5px; }
+.selection-box .handle-br { bottom: -6.5px; right: -8.5px; }
+
+/* Glassmorphism utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.12), inset 0 1px 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.glass-pill {
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.08), inset 0 1px 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.glass-pill:hover {
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* Liquid Wave Keyframe Animations */
+@keyframes waveSlow {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes waveFast {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-wave-slow {
+  animation: waveSlow 2.8s linear infinite;
+}
+
+.animate-wave-fast {
+  animation: waveFast 1.7s linear infinite;
+}
