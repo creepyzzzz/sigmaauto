@@ -101,6 +101,54 @@ export function extractFormData(html: string) {
   };
 }
 
+const CLOUDFLARE_PROXY_URL = process.env.CLOUDFLARE_PROXY_URL || "https://royal-bar-c2da.tariqmir1278.workers.dev";
+
+async function proxyFetch(
+  targetUrl: string,
+  options: {
+    method?: string;
+    targetReferer?: string;
+    targetCookie?: string;
+    redirectMode?: string;
+    contentType?: string;
+    body?: string;
+  } = {}
+): Promise<{ status: number; text: () => Promise<string>; json: () => Promise<any>; headers: Headers }> {
+  const proxyEndpoint = `${CLOUDFLARE_PROXY_URL.replace(/\/+$/, "")}?url=${encodeURIComponent(targetUrl)}`;
+  const headers: Record<string, string> = {};
+
+  if (options.targetReferer) headers["x-target-referer"] = options.targetReferer;
+  if (options.targetCookie) headers["x-target-cookie"] = options.targetCookie;
+  if (options.redirectMode) headers["x-redirect-mode"] = options.redirectMode;
+  if (options.contentType) headers["Content-Type"] = options.contentType;
+
+  try {
+    const res = await fetch(proxyEndpoint, {
+      method: options.method || "GET",
+      headers,
+      body: options.body,
+    });
+    return res;
+  } catch (err: any) {
+    console.warn(`[ProxyFetch] Cloudflare proxy failed, falling back to direct fetch:`, err?.message);
+    const directHeaders: Record<string, string> = {
+      "User-Agent": DEFAULT_BROWSER_USER_AGENT,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    };
+    if (options.targetReferer) directHeaders["Referer"] = options.targetReferer;
+    if (options.targetCookie) directHeaders["Cookie"] = options.targetCookie;
+    if (options.contentType) directHeaders["Content-Type"] = options.contentType;
+
+    return fetch(targetUrl, {
+      method: options.method || "GET",
+      headers: directHeaders,
+      body: options.body,
+      redirect: (options.redirectMode as any) || "manual",
+    });
+  }
+}
+
 export async function handleLksfy(
   keyUrl: string,
   onProgress?: (step: string, secondsRemaining?: number) => void
@@ -115,27 +163,10 @@ export async function handleLksfy(
     console.log(`[Extractor:Lksfy] Starting extraction for ${keyUrl} (alias: ${alias})`);
     onProgress?.("Resolving shortener redirect...");
 
-    const browserHeaders: Record<string, string> = {
-      "User-Agent": DEFAULT_BROWSER_USER_AGENT,
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Sec-Ch-Ua": '"Not A(Brand";v="8", "Chromium";v="133", "Google Chrome";v="133"',
-      "Sec-Ch-Ua-Mobile": "?0",
-      "Sec-Ch-Ua-Platform": '"Windows"',
-      "Sec-Fetch-Dest": "document",
-      "Sec-Fetch-Mode": "navigate",
-      "Sec-Fetch-Site": "none",
-      "Sec-Fetch-User": "?1",
-      "Upgrade-Insecure-Requests": "1",
-    };
-
     // Step 1: Initial GET with redirect capture
-    const r1 = await fetch(keyUrl, {
-      headers: {
-        ...browserHeaders,
-        "Referer": keyUrl,
-      },
-      redirect: "manual",
+    const r1 = await proxyFetch(keyUrl, {
+      redirectMode: "manual",
+      targetReferer: keyUrl,
     });
 
     console.log(`[Extractor:Lksfy] Request 1 status: ${r1.status}`);
@@ -151,48 +182,30 @@ export async function handleLksfy(
     const cookieHeader = cookies.map((c) => c.split(";")[0].trim()).join("; ");
 
     let redirectUrl = r1.headers.get("location");
-    if (!redirectUrl && (r1.status === 200 || r1.status === 302)) {
+    const r1Text = await r1.text();
+
+    // Check for JavaScript redirect
+    const jsMatch = r1Text.match(/window\.location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i) ||
+                    r1Text.match(/location\.replace\(['"]([^'"]+)['"]\)/i) ||
+                    r1Text.match(/url=([^"'>\s]+)/i);
+
+    if (!redirectUrl && jsMatch) {
+      redirectUrl = jsMatch[1];
+    }
+
+    if (!redirectUrl) {
       redirectUrl = keyUrl;
     }
     console.log(`[Extractor:Lksfy] Captured redirect URL: ${redirectUrl}`);
 
     // Step 2: GET with Referer & Cookie persistence
     onProgress?.("Fetching security challenge payload...");
-    const r2Headers: Record<string, string> = {
-      ...browserHeaders,
-      "Referer": redirectUrl || keyUrl,
-      "Sec-Fetch-Site": "same-origin",
-    };
-    if (cookieHeader) {
-      r2Headers["Cookie"] = cookieHeader;
-    }
-
-    let r2 = await fetch(keyUrl, {
-      headers: r2Headers,
+    const r2 = await proxyFetch(keyUrl, {
+      targetReferer: redirectUrl || keyUrl,
+      targetCookie: cookieHeader,
     });
 
     console.log(`[Extractor:Lksfy] Request 2 status: ${r2.status}`);
-
-    // If r2 returns a redirect, capture updated cookies and follow
-    if (r2.status === 301 || r2.status === 302 || r2.status === 307 || r2.status === 308) {
-      const loc2 = r2.headers.get("location");
-      console.log(`[Extractor:Lksfy] Request 2 redirected to: ${loc2}`);
-      if (loc2) {
-        let cookies2 = cookies;
-        if (typeof (r2.headers as any).getSetCookie === "function") {
-          cookies2 = [...cookies, ...((r2.headers as any).getSetCookie() || [])];
-        }
-        const cookieHeader2 = cookies2.map((c) => c.split(";")[0].trim()).join("; ");
-        r2 = await fetch(loc2.startsWith("http") ? loc2 : new URL(loc2, keyUrl).toString(), {
-          headers: {
-            ...browserHeaders,
-            "Referer": keyUrl,
-            "Cookie": cookieHeader2 || cookieHeader,
-          },
-        });
-        console.log(`[Extractor:Lksfy] Request 2 followed status: ${r2.status}`);
-      }
-    }
 
     let html = await r2.text();
     console.log(`[Extractor:Lksfy] HTML payload length: ${html.length}`);
@@ -208,16 +221,13 @@ export async function handleLksfy(
 
     let base64Val = findBase64(html);
 
-    // If not found, attempt fallback request with alternate referer
+    // If not found, attempt fallback request
     if (!base64Val) {
       console.log("[Extractor:Lksfy] Base64 token not in primary HTML, attempting fallback referer request...");
       try {
-        const rFallback = await fetch(keyUrl, {
-          headers: {
-            ...browserHeaders,
-            "Referer": "https://lksfy.com/",
-            "Cookie": cookieHeader,
-          },
+        const rFallback = await proxyFetch(keyUrl, {
+          targetReferer: "https://lksfy.com/",
+          targetCookie: cookieHeader,
         });
         const fallbackHtml = await rFallback.text();
         const fallbackBase64 = findBase64(fallbackHtml);
@@ -233,9 +243,9 @@ export async function handleLksfy(
 
     if (!base64Val) {
       console.error("[Extractor:Lksfy] Challenge token could not be located in HTML snippet:", html.slice(0, 500));
-      const finalTg = extractTelegramKey(r2.url || keyUrl);
+      const finalTg = extractTelegramKey(keyUrl);
       if (finalTg) {
-        return { success: true, key: finalTg, url: r2.url || keyUrl, source: "Telegram" };
+        return { success: true, key: finalTg, url: keyUrl, source: "Telegram" };
       }
       return { success: false, error: "Could not locate challenge token on page." };
     }
@@ -273,7 +283,6 @@ export async function handleLksfy(
     let postJson: any = null;
     let postError = "Failed to generate key URL.";
 
-    // Merge existing cookies with csrfToken
     let postCookieHeader = `csrfToken=${formData.csrfToken}`;
     if (cookieHeader) {
       postCookieHeader += `; ${cookieHeader}`;
@@ -281,22 +290,15 @@ export async function handleLksfy(
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const postResp = await fetch(postUrl, {
+        const postResp = await proxyFetch(postUrl, {
           method: "POST",
-          headers: {
-            "User-Agent": DEFAULT_BROWSER_USER_AGENT,
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Referer": "https://lksfy.com/",
-            "Origin": "https://lksfy.com",
-            "Cookie": postCookieHeader,
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "Accept-Language": "en-US,en;q=0.9",
-          },
+          contentType: "application/x-www-form-urlencoded; charset=UTF-8",
+          targetReferer: "https://lksfy.com/",
+          targetCookie: postCookieHeader,
           body: postBody,
         });
 
-        if (postResp.ok) {
+        if (postResp.status === 200) {
           postJson = await postResp.json();
           if (postJson?.status === "success" && postJson?.url) {
             break;
