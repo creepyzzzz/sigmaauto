@@ -1,11 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
-  ? (process.env.NEXT_PUBLIC_SITE_URL.startsWith('http') ? process.env.NEXT_PUBLIC_SITE_URL : `https://${process.env.NEXT_PUBLIC_SITE_URL}`)
-  : process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : 'https://thisiskeyo.vercel.app';
+const siteUrl = 'https://thisiskeyo.vercel.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -47,13 +43,13 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "/",
+    url: siteUrl,
     siteName: "Keyo",
     title: "Keyo — Extract Keys Instantly",
     description: "Bypass shortener countdowns and extract access keys instantly with a single click.",
     images: [
       {
-        url: "/images/og.png",
+        url: `${siteUrl}/images/og.png`,
         width: 1200,
         height: 630,
         alt: "Keyo — Extract Keys Instantly",
@@ -64,7 +60,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Keyo — Extract Keys Instantly",
     description: "Bypass shortener countdowns and extract access keys instantly with a single click.",
-    images: ["/images/og.png"],
+    images: [`${siteUrl}/images/og.png`],
     creator: "@Rrryomenn",
   },
   robots: {

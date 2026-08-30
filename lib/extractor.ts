@@ -112,6 +112,7 @@ export async function handleLksfy(
       return { success: false, error: "Invalid Lksfy URL alias." };
     }
 
+    console.log(`[Extractor:Lksfy] Starting extraction for ${keyUrl} (alias: ${alias})`);
     onProgress?.("Resolving shortener redirect...");
 
     const browserHeaders: Record<string, string> = {
@@ -137,6 +138,8 @@ export async function handleLksfy(
       redirect: "manual",
     });
 
+    console.log(`[Extractor:Lksfy] Request 1 status: ${r1.status}`);
+
     // Capture cookies
     let cookies: string[] = [];
     if (typeof (r1.headers as any).getSetCookie === "function") {
@@ -151,6 +154,7 @@ export async function handleLksfy(
     if (!redirectUrl && (r1.status === 200 || r1.status === 302)) {
       redirectUrl = keyUrl;
     }
+    console.log(`[Extractor:Lksfy] Captured redirect URL: ${redirectUrl}`);
 
     // Step 2: GET with Referer & Cookie persistence
     onProgress?.("Fetching security challenge payload...");
@@ -163,26 +167,72 @@ export async function handleLksfy(
       r2Headers["Cookie"] = cookieHeader;
     }
 
-    const r2 = await fetch(keyUrl, {
+    let r2 = await fetch(keyUrl, {
       headers: r2Headers,
     });
 
-    const html = await r2.text();
+    console.log(`[Extractor:Lksfy] Request 2 status: ${r2.status}`);
+
+    // If r2 returns a redirect, capture updated cookies and follow
+    if (r2.status === 301 || r2.status === 302 || r2.status === 307 || r2.status === 308) {
+      const loc2 = r2.headers.get("location");
+      console.log(`[Extractor:Lksfy] Request 2 redirected to: ${loc2}`);
+      if (loc2) {
+        let cookies2 = cookies;
+        if (typeof (r2.headers as any).getSetCookie === "function") {
+          cookies2 = [...cookies, ...((r2.headers as any).getSetCookie() || [])];
+        }
+        const cookieHeader2 = cookies2.map((c) => c.split(";")[0].trim()).join("; ");
+        r2 = await fetch(loc2.startsWith("http") ? loc2 : new URL(loc2, keyUrl).toString(), {
+          headers: {
+            ...browserHeaders,
+            "Referer": keyUrl,
+            "Cookie": cookieHeader2 || cookieHeader,
+          },
+        });
+        console.log(`[Extractor:Lksfy] Request 2 followed status: ${r2.status}`);
+      }
+    }
+
+    let html = await r2.text();
+    console.log(`[Extractor:Lksfy] HTML payload length: ${html.length}`);
 
     // Multi-pattern resilient regex matching for challenge token
-    let base64Val: string | null = null;
-    const m1 = html.match(/var\s+base64\s*=\s*['"]([^'"]+)['"]/i);
-    const m2 = html.match(/base64\s*=\s*['"]([A-Za-z0-9+/=]{20,})['"]/i);
-    const m3 = html.match(/name="base64"[^>]*value="([^"]+)"/i);
-    const m4 = html.match(/data-base64="([^"]+)"/i);
+    const findBase64 = (str: string) => {
+      const m1 = str.match(/var\s+base64\s*=\s*['"]([^'"]+)['"]/i);
+      const m2 = str.match(/base64\s*=\s*['"]([A-Za-z0-9+/=]{20,})['"]/i);
+      const m3 = str.match(/name="base64"[^>]*value="([^"]+)"/i);
+      const m4 = str.match(/data-base64="([^"]+)"/i);
+      return m1?.[1] || m2?.[1] || m3?.[1] || m4?.[1] || null;
+    };
 
-    if (m1) base64Val = m1[1];
-    else if (m2) base64Val = m2[1];
-    else if (m3) base64Val = m3[1];
-    else if (m4) base64Val = m4[1];
+    let base64Val = findBase64(html);
+
+    // If not found, attempt fallback request with alternate referer
+    if (!base64Val) {
+      console.log("[Extractor:Lksfy] Base64 token not in primary HTML, attempting fallback referer request...");
+      try {
+        const rFallback = await fetch(keyUrl, {
+          headers: {
+            ...browserHeaders,
+            "Referer": "https://lksfy.com/",
+            "Cookie": cookieHeader,
+          },
+        });
+        const fallbackHtml = await rFallback.text();
+        const fallbackBase64 = findBase64(fallbackHtml);
+        if (fallbackBase64) {
+          base64Val = fallbackBase64;
+          html = fallbackHtml;
+          console.log("[Extractor:Lksfy] Base64 token found via fallback request!");
+        }
+      } catch (err: any) {
+        console.error("[Extractor:Lksfy] Fallback request error:", err?.message);
+      }
+    }
 
     if (!base64Val) {
-      // Check if page already redirected to direct verification URL
+      console.error("[Extractor:Lksfy] Challenge token could not be located in HTML snippet:", html.slice(0, 500));
       const finalTg = extractTelegramKey(r2.url || keyUrl);
       if (finalTg) {
         return { success: true, key: finalTg, url: r2.url || keyUrl, source: "Telegram" };
@@ -190,12 +240,15 @@ export async function handleLksfy(
       return { success: false, error: "Could not locate challenge token on page." };
     }
 
+    console.log(`[Extractor:Lksfy] Found base64 challenge token (length: ${base64Val.length})`);
     const decryptedHtml = decryptAesCbc(base64Val, alias);
     if (!decryptedHtml) {
+      console.error("[Extractor:Lksfy] Decryption failed for base64 token");
       return { success: false, error: "Failed to decrypt challenge parameters." };
     }
 
     const formData = extractFormData(decryptedHtml);
+    console.log(`[Extractor:Lksfy] Extracted form action: ${formData.action}, csrf: ${!!formData.csrfToken}`);
     if (!formData.action || !formData.csrfToken) {
       return { success: false, error: "Incomplete form parameters." };
     }
@@ -260,18 +313,25 @@ export async function handleLksfy(
     }
 
     if (!postJson || postJson.status !== "success" || !postJson.url) {
+      console.error(`[Extractor:Lksfy] POST to ${postUrl} failed: ${postError}`);
       return { success: false, error: postError };
     }
+
+    console.log(`[Extractor:Lksfy] POST succeeded, received encrypted final URL`);
 
     // Step 5: Decrypt final destination URL
     const finalUrl = decryptAesCbc(postJson.url, alias);
     if (!finalUrl) {
+      console.error("[Extractor:Lksfy] Failed to decrypt final destination URL");
       return { success: false, error: "Failed to decrypt final destination URL." };
     }
+
+    console.log(`[Extractor:Lksfy] Decrypted destination URL: ${finalUrl}`);
 
     // Check Telegram
     const tgKey = extractTelegramKey(finalUrl);
     if (tgKey) {
+      console.log(`[Extractor:Lksfy] Resolved Telegram Key: ${tgKey}`);
       return { success: true, key: tgKey, url: finalUrl, associatedUrl: finalUrl, source: "Telegram" };
     }
 
@@ -282,9 +342,11 @@ export async function handleLksfy(
                 finalParsed.searchParams.get("token")?.trim();
 
     if (key) {
+      console.log(`[Extractor:Lksfy] Resolved Key: ${key}`);
       return { success: true, key, url: finalUrl, source: "Lksfy" };
     }
 
+    console.error(`[Extractor:Lksfy] Key parameter not found in destination URL: ${finalUrl}`);
     return { success: false, error: "Key not found in destination URL", url: finalUrl };
   } catch (err: any) {
     return { success: false, error: err?.message || "Lksfy extraction failed." };
@@ -459,20 +521,37 @@ export async function autoGenerateKey(
       return { success: false, error: "Could not locate baseUrl in discovery payload." };
     }
 
-    onProgress?.("Generating auth session key...");
-    const genUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/auth/generate?server=1`;
-    const genResp = await fetch(genUrl, {
-      headers: { "User-Agent": DEFAULT_APP_USER_AGENT },
-    });
-    const genJson = await genResp.json();
+    // Try server 1, then fallback to server 2, then server 3
+    const servers = [1, 2, 3];
+    let lastError = "Auto-generation discovery failed.";
 
-    const keyUrl = genJson?.data?.keyUrl;
-    if (!keyUrl) {
-      return { success: false, error: "Auth endpoint did not return keyUrl." };
+    for (const serverId of servers) {
+      try {
+        onProgress?.(`Generating auth session key (server ${serverId})...`);
+        const genUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/auth/generate?server=${serverId}`;
+        const genResp = await fetch(genUrl, {
+          headers: { "User-Agent": DEFAULT_APP_USER_AGENT },
+        });
+        const genJson = await genResp.json();
+
+        const keyUrl = genJson?.data?.keyUrl;
+        if (!keyUrl) {
+          lastError = `Server ${serverId} did not return keyUrl.`;
+          continue;
+        }
+
+        onProgress?.("Routing key URL to resolver...");
+        const result = await processDirectUrl(keyUrl, onProgress);
+        if (result.success) {
+          return result;
+        }
+        lastError = result.error || lastError;
+      } catch (err: any) {
+        lastError = err?.message || lastError;
+      }
     }
 
-    onProgress?.("Routing key URL to resolver...");
-    return processDirectUrl(keyUrl, onProgress);
+    return { success: false, error: lastError };
   } catch (err: any) {
     return { success: false, error: err?.message || "Auto-generation discovery failed." };
   }

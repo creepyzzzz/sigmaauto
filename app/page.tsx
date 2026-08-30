@@ -111,12 +111,13 @@ export default function Home() {
                     triggerConfetti();
                   } else if (data.type === 'error') {
                     receivedResult = true;
+                    console.error('[Keyo Extraction Error]', data.error);
                     setErrorMessage(data.error || 'Failed to extract key.');
                     setLoading(false);
                     setCountdown(null);
                   }
                 } catch (e) {
-                  console.error('SSE parse error:', e, line);
+                  console.error('[Keyo SSE Parse Error]', e, line);
                 }
               }
             }
@@ -134,11 +135,13 @@ export default function Home() {
           if (data.associatedUrl) setAssociatedUrl(data.associatedUrl);
           triggerConfetti();
         } else {
+          console.error('[Keyo Extraction Error]', data.error);
           setErrorMessage(data.error || 'Failed to extract key.');
         }
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Network error occurred. Please try again.');
+      console.error('[Keyo Client Exception]', err);
+      setErrorMessage(err?.message || 'Failed to connect to the extraction service.');
     } finally {
       setLoading(false);
       setCountdown(null);
