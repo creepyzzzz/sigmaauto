@@ -42,7 +42,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 1. Push your repository to GitHub / GitLab.
 2. Import the project into [Vercel](https://vercel.com).
-3. Set `NEXT_PUBLIC_SITE_URL` to your domain (e.g. `https://keyo.vercel.app`).
+3. Set `NEXT_PUBLIC_SITE_URL` to your domain (e.g. `https://thisiskeyo.vercel.app`).
 4. Deploy! Next.js serverless functions will automatically handle the backend extraction routes.
 
 ---
