@@ -114,37 +114,82 @@ export async function handleLksfy(
 
     onProgress?.("Resolving shortener redirect...");
 
+    const browserHeaders: Record<string, string> = {
+      "User-Agent": DEFAULT_BROWSER_USER_AGENT,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Sec-Ch-Ua": '"Not A(Brand";v="8", "Chromium";v="133", "Google Chrome";v="133"',
+      "Sec-Ch-Ua-Mobile": "?0",
+      "Sec-Ch-Ua-Platform": '"Windows"',
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-User": "?1",
+      "Upgrade-Insecure-Requests": "1",
+    };
+
     // Step 1: Initial GET with redirect capture
     const r1 = await fetch(keyUrl, {
       headers: {
-        "User-Agent": DEFAULT_BROWSER_USER_AGENT,
+        ...browserHeaders,
         "Referer": keyUrl,
       },
       redirect: "manual",
     });
+
+    // Capture cookies
+    let cookies: string[] = [];
+    if (typeof (r1.headers as any).getSetCookie === "function") {
+      cookies = (r1.headers as any).getSetCookie();
+    } else {
+      const singleCookie = r1.headers.get("set-cookie");
+      if (singleCookie) cookies = [singleCookie];
+    }
+    const cookieHeader = cookies.map((c) => c.split(";")[0].trim()).join("; ");
 
     let redirectUrl = r1.headers.get("location");
     if (!redirectUrl && (r1.status === 200 || r1.status === 302)) {
       redirectUrl = keyUrl;
     }
 
-    // Step 2: GET with Referer
+    // Step 2: GET with Referer & Cookie persistence
     onProgress?.("Fetching security challenge payload...");
+    const r2Headers: Record<string, string> = {
+      ...browserHeaders,
+      "Referer": redirectUrl || keyUrl,
+      "Sec-Fetch-Site": "same-origin",
+    };
+    if (cookieHeader) {
+      r2Headers["Cookie"] = cookieHeader;
+    }
+
     const r2 = await fetch(keyUrl, {
-      headers: {
-        "User-Agent": DEFAULT_BROWSER_USER_AGENT,
-        "Referer": redirectUrl || keyUrl,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      },
+      headers: r2Headers,
     });
 
     const html = await r2.text();
-    const base64Match = html.match(/var base64 = '([^']+)'/);
-    if (!base64Match) {
+
+    // Multi-pattern resilient regex matching for challenge token
+    let base64Val: string | null = null;
+    const m1 = html.match(/var\s+base64\s*=\s*['"]([^'"]+)['"]/i);
+    const m2 = html.match(/base64\s*=\s*['"]([A-Za-z0-9+/=]{20,})['"]/i);
+    const m3 = html.match(/name="base64"[^>]*value="([^"]+)"/i);
+    const m4 = html.match(/data-base64="([^"]+)"/i);
+
+    if (m1) base64Val = m1[1];
+    else if (m2) base64Val = m2[1];
+    else if (m3) base64Val = m3[1];
+    else if (m4) base64Val = m4[1];
+
+    if (!base64Val) {
+      // Check if page already redirected to direct verification URL
+      const finalTg = extractTelegramKey(r2.url || keyUrl);
+      if (finalTg) {
+        return { success: true, key: finalTg, url: r2.url || keyUrl, source: "Telegram" };
+      }
       return { success: false, error: "Could not locate challenge token on page." };
     }
 
-    const base64Val = base64Match[1];
     const decryptedHtml = decryptAesCbc(base64Val, alias);
     if (!decryptedHtml) {
       return { success: false, error: "Failed to decrypt challenge parameters." };
@@ -175,7 +220,13 @@ export async function handleLksfy(
     let postJson: any = null;
     let postError = "Failed to generate key URL.";
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    // Merge existing cookies with csrfToken
+    let postCookieHeader = `csrfToken=${formData.csrfToken}`;
+    if (cookieHeader) {
+      postCookieHeader += `; ${cookieHeader}`;
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const postResp = await fetch(postUrl, {
           method: "POST",
@@ -184,9 +235,10 @@ export async function handleLksfy(
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Referer": "https://lksfy.com/",
             "Origin": "https://lksfy.com",
-            "Cookie": `csrfToken=${formData.csrfToken}`,
+            "Cookie": postCookieHeader,
             "X-Requested-With": "XMLHttpRequest",
             "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "en-US,en;q=0.9",
           },
           body: postBody,
         });
@@ -202,8 +254,8 @@ export async function handleLksfy(
         postError = e?.message || postError;
       }
 
-      if (attempt < 2) {
-        await new Promise((r) => setTimeout(r, 2000));
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1500));
       }
     }
 
