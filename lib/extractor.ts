@@ -184,7 +184,7 @@ export async function handleLksfy(
     let redirectUrl = r1.headers.get("location");
     const r1Text = await r1.text();
 
-    // Check for JavaScript redirect
+    // Check for JavaScript redirect in initial page
     const jsMatch = r1Text.match(/window\.location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i) ||
                     r1Text.match(/location\.replace\(['"]([^'"]+)['"]\)/i) ||
                     r1Text.match(/url=([^"'>\s]+)/i);
@@ -193,15 +193,35 @@ export async function handleLksfy(
       redirectUrl = jsMatch[1];
     }
 
-    if (!redirectUrl) {
-      redirectUrl = keyUrl;
+    // Resolve intermediary scanner/blog redirect (e.g. raptortools.net -> recruitmentaim.in)
+    let refererUrl = redirectUrl || keyUrl;
+    if (redirectUrl && !redirectUrl.includes("lksfy.com")) {
+      try {
+        const rInter = await proxyFetch(redirectUrl, {
+          targetReferer: keyUrl,
+          redirectMode: "manual",
+        });
+        const nextLoc = rInter.headers.get("location");
+        const interText = await rInter.text();
+        const interJsMatch = interText.match(/window\.location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i) ||
+                             interText.match(/location\.replace\(['"]([^'"]+)['"]\)/i);
+        if (nextLoc) {
+          refererUrl = nextLoc;
+        } else if (interJsMatch) {
+          refererUrl = interJsMatch[1];
+        }
+        console.log(`[Extractor:Lksfy] Resolved intermediary referer URL: ${refererUrl}`);
+      } catch (err: any) {
+        console.warn("[Extractor:Lksfy] Intermediary redirect resolve warning:", err?.message);
+      }
     }
-    console.log(`[Extractor:Lksfy] Captured redirect URL: ${redirectUrl}`);
+
+    console.log(`[Extractor:Lksfy] Using referer URL: ${refererUrl}`);
 
     // Step 2: GET with Referer & Cookie persistence
     onProgress?.("Fetching security challenge payload...");
     const r2 = await proxyFetch(keyUrl, {
-      targetReferer: redirectUrl || keyUrl,
+      targetReferer: refererUrl,
       targetCookie: cookieHeader,
     });
 
@@ -221,7 +241,27 @@ export async function handleLksfy(
 
     let base64Val = findBase64(html);
 
-    // If not found, attempt fallback request
+    // If not found, attempt fallback request with original redirectUrl or domain
+    if (!base64Val && redirectUrl && redirectUrl !== refererUrl) {
+      console.log("[Extractor:Lksfy] Base64 token not found with intermediary referer, attempting with initial redirectUrl...");
+      try {
+        const rFallback = await proxyFetch(keyUrl, {
+          targetReferer: redirectUrl,
+          targetCookie: cookieHeader,
+        });
+        const fallbackHtml = await rFallback.text();
+        const fallbackBase64 = findBase64(fallbackHtml);
+        if (fallbackBase64) {
+          base64Val = fallbackBase64;
+          html = fallbackHtml;
+          console.log("[Extractor:Lksfy] Base64 token found via initial redirectUrl fallback!");
+        }
+      } catch (err: any) {
+        console.error("[Extractor:Lksfy] Fallback request error:", err?.message);
+      }
+    }
+
+    // Secondary fallback
     if (!base64Val) {
       console.log("[Extractor:Lksfy] Base64 token not in primary HTML, attempting fallback referer request...");
       try {
@@ -234,7 +274,7 @@ export async function handleLksfy(
         if (fallbackBase64) {
           base64Val = fallbackBase64;
           html = fallbackHtml;
-          console.log("[Extractor:Lksfy] Base64 token found via fallback request!");
+          console.log("[Extractor:Lksfy] Base64 token found via lksfy referer fallback!");
         }
       } catch (err: any) {
         console.error("[Extractor:Lksfy] Fallback request error:", err?.message);
@@ -300,7 +340,7 @@ export async function handleLksfy(
 
         if (postResp.status === 200) {
           postJson = await postResp.json();
-          if (postJson?.status === "success" && postJson?.url) {
+          if (postJson?.url) {
             break;
           }
           postError = postJson?.message || postError;
@@ -314,7 +354,7 @@ export async function handleLksfy(
       }
     }
 
-    if (!postJson || postJson.status !== "success" || !postJson.url) {
+    if (!postJson || !postJson.url) {
       console.error(`[Extractor:Lksfy] POST to ${postUrl} failed: ${postError}`);
       return { success: false, error: postError };
     }

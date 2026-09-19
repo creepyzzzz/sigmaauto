@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import HangingKeys from '@/components/HangingKeys';
@@ -8,6 +8,13 @@ import HumanTypingPlaceholder from '@/components/HumanTypingPlaceholder';
 import AmbientParallaxKeys from '@/components/AmbientParallaxKeys';
 import SmartClipboardDetector from '@/components/SmartClipboardDetector';
 import LiquidMorphButton from '@/components/LiquidMorphButton';
+
+export interface KeyHistoryItem {
+  key: string;
+  timestamp: number;
+  source: string;
+  associatedUrl?: string;
+}
 
 export default function Home() {
   const [url, setUrl] = useState('');
@@ -20,8 +27,80 @@ export default function Home() {
   const [associatedUrl, setAssociatedUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showCustomLink, setShowCustomLink] = useState(false);
+  const [keyHistory, setKeyHistory] = useState<KeyHistoryItem[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [copiedHistoryKey, setCopiedHistoryKey] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(Date.now());
 
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load history from localStorage on client mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('keyo_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setKeyHistory(parsed.slice(0, 5));
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Update real-time relative ticker every 10 seconds
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const saveKeyToHistory = (newKey: string, source: string, assocUrl?: string) => {
+    setKeyHistory((prev) => {
+      // Avoid duplicate top key
+      const filtered = prev.filter((item) => item.key !== newKey);
+      const updated: KeyHistoryItem[] = [
+        {
+          key: newKey,
+          timestamp: Date.now(),
+          source,
+          associatedUrl: assocUrl,
+        },
+        ...filtered,
+      ].slice(0, 5);
+
+      try {
+        localStorage.setItem('keyo_history', JSON.stringify(updated));
+      } catch {}
+
+      return updated;
+    });
+  };
+
+  const clearHistory = () => {
+    setKeyHistory([]);
+    try {
+      localStorage.removeItem('keyo_history');
+    } catch {}
+  };
+
+  const formatRelativeTime = (timestamp: number) => {
+    const diffSec = Math.max(0, Math.floor((now - timestamp) / 1000));
+    if (diffSec < 15) return 'Just now';
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  const handleCopyHistoryItem = (keyText: string) => {
+    navigator.clipboard.writeText(keyText);
+    setCopiedHistoryKey(keyText);
+    triggerConfetti();
+    setTimeout(() => setCopiedHistoryKey(null), 2000);
+  };
 
   const triggerConfetti = () => {
     try {
@@ -111,6 +190,7 @@ export default function Home() {
                     receivedResult = true;
                     setExtractedKey(data.key);
                     if (data.associatedUrl) setAssociatedUrl(data.associatedUrl);
+                    saveKeyToHistory(data.key, isAuto ? 'Auto' : 'Link', data.associatedUrl);
                     setLoading(false);
                     setCountdown(null);
                     triggerConfetti();
@@ -138,6 +218,7 @@ export default function Home() {
         if (data.success && data.key) {
           setExtractedKey(data.key);
           if (data.associatedUrl) setAssociatedUrl(data.associatedUrl);
+          saveKeyToHistory(data.key, isAuto ? 'Auto' : 'Link', data.associatedUrl);
           triggerConfetti();
         } else {
           console.error('[Keyo Extraction Error]', data.error);
@@ -206,7 +287,7 @@ export default function Home() {
       </header>
 
       {/* Main Center Content */}
-      <main className="relative z-10 w-full max-w-3xl flex flex-col items-center justify-center my-auto py-3 sm:py-6 px-1">
+      <main className="relative z-10 w-full max-w-3xl flex flex-col items-center justify-start sm:justify-center my-auto pt-4 pb-6 sm:py-6 px-1">
         {/* Centered Headline Container with macOS Window Dots aligned above the 'E' of Extract */}
         <div className="w-fit mx-auto flex flex-col items-start mb-1 sm:mb-2">
           {/* macOS / iOS Liquid Glass Buttons placed directly above the 'E' of Extract keys */}
@@ -283,11 +364,11 @@ export default function Home() {
 
           {/* Hero Title with Interactive Falling Keys and Clean Headline */}
           <h1 className="text-center font-bold tracking-tight text-white leading-[1.08] flex flex-col items-center font-heading">
-            <span className="block text-4xl sm:text-6xl md:text-7xl lg:text-[76px] font-bold mb-0.5 sm:mb-1 tracking-tight drop-shadow-sm text-center">
+            <span className="block text-[2.1rem] xs:text-4xl sm:text-6xl md:text-7xl lg:text-[76px] font-bold mb-0.5 sm:mb-1 tracking-tight drop-shadow-sm text-center">
               Extract{' '}
               <HangingKeys />
             </span>
-            <span className="block text-4xl sm:text-6xl md:text-7xl lg:text-[76px] font-bold tracking-tight drop-shadow-sm text-center">
+            <span className="block text-[2.1rem] xs:text-4xl sm:text-6xl md:text-7xl lg:text-[76px] font-bold tracking-tight drop-shadow-sm text-center">
               instantly.
             </span>
           </h1>
@@ -303,49 +384,98 @@ export default function Home() {
           currentUrl={url}
           onSelectUrl={(pastedUrl, autoStart) => {
             setUrl(pastedUrl);
+            setShowCustomLink(true);
             if (autoStart) {
               startExtraction(pastedUrl, false);
             }
           }}
         />
 
-        {/* Dynamic Smart URL Input Form Pill */}
-        <form onSubmit={handleExtractSubmit} className="w-full max-w-xl mb-6 sm:mb-8">
-          <div className="glass-pill rounded-full p-1.5 sm:p-2 flex items-center gap-1.5 sm:gap-2 transition-all shadow-[0_2px_16px_rgba(255,255,255,0.08),inset_0_1px_1px_rgba(255,255,255,0.35)] focus-within:shadow-[0_2px_20px_rgba(255,255,255,0.18),inset_0_1px_1px_rgba(255,255,255,0.5)] focus-within:ring-2 focus-within:ring-white/50">
-            <div className="pl-2 sm:pl-3 text-sky-200 flex items-center shrink-0">
-              <i className="f7-icons text-base sm:text-lg text-sky-200 leading-none">link</i>
-            </div>
-            <div className="relative flex-1 min-w-0 flex items-center">
-              {!url && (
-                <HumanTypingPlaceholder isFocused={isInputFocused} />
-              )}
-              <input
-                ref={inputRef}
-                type="text"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onFocus={() => setIsInputFocused(true)}
-                onBlur={() => setIsInputFocused(false)}
-                disabled={loading}
-                className="w-full bg-transparent text-white text-xs sm:text-base outline-none px-1 py-1 font-normal disabled:opacity-50 relative z-10"
-              />
-            </div>
-            {url && (
+        {/* Primary Interaction Area */}
+        <div className="w-full max-w-xl flex flex-col items-center mb-6 sm:mb-8">
+          {!showCustomLink ? (
+            /* 90% Primary Flow: Big Beautiful 1-Click Auto-Generate Button */
+            <div className="w-full flex flex-col items-center gap-3">
               <button
                 type="button"
-                onClick={() => setUrl('')}
-                className="text-white/60 hover:text-white p-1 rounded-full flex items-center shrink-0 cursor-pointer relative z-20"
+                onClick={handleAutoGenerate}
+                disabled={loading}
+                className="w-full sm:w-auto relative group overflow-hidden bg-white hover:bg-white/95 active:scale-[0.98] text-slate-900 font-bold px-8 sm:px-10 py-3.5 sm:py-4 rounded-full text-base sm:text-lg flex items-center justify-center shadow-[0_4px_24px_rgba(255,255,255,0.3)] hover:shadow-[0_6px_30px_rgba(255,255,255,0.45)] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <i className="f7-icons text-sm sm:text-base text-white/70 leading-none">xmark_circle_fill</i>
+                {/* Subtle sheen highlight */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-[45%] rounded-t-full bg-gradient-to-b from-white/70 via-white/20 to-transparent" />
+                <span>Get Key</span>
               </button>
-            )}
-            <LiquidMorphButton
-              hasUrl={!!url.trim()}
-              loading={loading}
-              onClick={handleExtractSubmit}
-            />
-          </div>
-        </form>
+
+              {/* Secondary Discreet Toggle for the 10% Custom Link Case */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCustomLink(true);
+                  setTimeout(() => inputRef.current?.focus(), 100);
+                }}
+                className="text-xs sm:text-[13px] text-sky-100/80 hover:text-white flex items-center gap-1.5 py-1 px-3 rounded-full hover:bg-white/10 transition-all cursor-pointer"
+              >
+                <span>Have your own link? Paste URL</span>
+                <i className="f7-icons text-[11px] sm:text-xs text-sky-200 leading-none">chevron_right</i>
+              </button>
+            </div>
+          ) : (
+            /* 10% Secondary Flow: Input Box for Custom Shortener Link */
+            <div className="w-full flex flex-col items-center gap-2">
+              <form onSubmit={handleExtractSubmit} className="w-full">
+                <div className="glass-pill rounded-full p-1.5 sm:p-2 flex items-center gap-1.5 sm:gap-2 transition-all shadow-[0_2px_16px_rgba(255,255,255,0.08),inset_0_1px_1px_rgba(255,255,255,0.35)] focus-within:shadow-[0_2px_20px_rgba(255,255,255,0.18),inset_0_1px_1px_rgba(255,255,255,0.5)] focus-within:ring-2 focus-within:ring-white/50">
+                  <div className="pl-2 sm:pl-3 text-sky-200 flex items-center shrink-0">
+                    <i className="f7-icons text-base sm:text-lg text-sky-200 leading-none">link</i>
+                  </div>
+                  <div className="relative flex-1 min-w-0 flex items-center">
+                    {!url && (
+                      <HumanTypingPlaceholder isFocused={isInputFocused} />
+                    )}
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      onFocus={() => setIsInputFocused(true)}
+                      onBlur={() => setIsInputFocused(false)}
+                      disabled={loading}
+                      placeholder={isInputFocused ? 'Paste your lksfy / nanolinks / telegram link...' : ''}
+                      className="w-full bg-transparent text-white placeholder-white/40 text-xs sm:text-base outline-none px-1 py-1 font-normal disabled:opacity-50 relative z-10"
+                    />
+                  </div>
+                  {url && (
+                    <button
+                      type="button"
+                      onClick={() => setUrl('')}
+                      className="text-white/60 hover:text-white p-1 rounded-full flex items-center shrink-0 cursor-pointer relative z-20"
+                    >
+                      <i className="f7-icons text-sm sm:text-base text-white/70 leading-none">xmark_circle_fill</i>
+                    </button>
+                  )}
+                  <LiquidMorphButton
+                    hasUrl={!!url.trim()}
+                    loading={loading}
+                    onClick={handleExtractSubmit}
+                  />
+                </div>
+              </form>
+
+              {/* Back to 1-Click Auto Generate option */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCustomLink(false);
+                  setUrl('');
+                }}
+                className="text-[11px] sm:text-xs text-sky-200/75 hover:text-white flex items-center gap-1 py-0.5 px-2.5 rounded-full hover:bg-white/10 transition-all cursor-pointer"
+              >
+                <i className="f7-icons text-[10px] text-sky-200 leading-none">arrow_left</i>
+                <span>Back to 1-Click Auto-Generate</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Error Alert Box */}
         {errorMessage && (
@@ -369,12 +499,12 @@ export default function Home() {
           {loading && (
             <motion.div
               key="loading-card"
-              initial={{ opacity: 0, y: 14, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98, transition: { duration: 0.15 } }}
-              transition={{ type: 'spring', damping: 26, stiffness: 340, mass: 0.7 }}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.12 } }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
-              className="w-full max-w-xl relative overflow-hidden rounded-[22px] sm:rounded-[32px] bg-white/[0.22] backdrop-blur-[36px] -webkit-backdrop-blur-[36px] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.18),inset_0_1px_1.5px_rgba(255,255,255,0.85),inset_0_-1px_1px_rgba(0,0,0,0.06)] px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between gap-3 sm:gap-6 mb-5 sm:mb-6"
+              className="w-full max-w-xl relative overflow-hidden rounded-[22px] sm:rounded-[32px] bg-white/[0.22] backdrop-blur-[36px] -webkit-backdrop-blur-[36px] border border-white/50 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between gap-3 sm:gap-6 mb-5 sm:mb-6"
             >
               {/* Top Glass Specular Arc Reflection */}
               <div className="pointer-events-none absolute inset-x-0 top-0 h-[45%] rounded-t-[22px] sm:rounded-t-[32px] bg-gradient-to-b from-white/40 via-white/10 to-transparent" />
@@ -404,10 +534,10 @@ export default function Home() {
 
                 {/* Typography */}
                 <div className="flex flex-col justify-center min-w-0">
-                  <h3 className="text-white font-semibold text-[15px] sm:text-[18px] tracking-[-0.02em] leading-snug truncate drop-shadow-sm">
+                  <h3 className="text-white font-semibold text-[15px] sm:text-[18px] tracking-[-0.02em] leading-snug truncate">
                     {statusMessage}
                   </h3>
-                  <p className="text-sky-100/90 text-[12px] sm:text-[14px] font-normal tracking-[-0.01em] mt-0.5 truncate drop-shadow-sm">
+                  <p className="text-sky-100/90 text-[12px] sm:text-[14px] font-normal tracking-[-0.01em] mt-0.5 truncate">
                     {subStatusMessage}
                   </p>
                 </div>
@@ -415,7 +545,7 @@ export default function Home() {
 
               {/* Right Liquid Glass Countdown Circle Badge */}
               {countdown !== null && countdown > 0 && (
-                <div className="relative z-10 w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-white/60 bg-white/20 backdrop-blur-xl flex items-center justify-center text-white font-semibold text-[14px] sm:text-[17px] tracking-[-0.01em] shrink-0 shadow-[inset_0_1px_1px_rgba(255,255,255,0.7),0_2px_8px_rgba(0,0,0,0.1)]">
+                <div className="relative z-10 w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-white/60 bg-white/20 backdrop-blur-xl flex items-center justify-center text-white font-semibold text-[14px] sm:text-[17px] tracking-[-0.01em] shrink-0">
                   <span>{countdown}s</span>
                 </div>
               )}
@@ -425,24 +555,24 @@ export default function Home() {
           {extractedKey && !loading && (
             <motion.div
               key="result-card"
-              initial={{ opacity: 0, y: 16, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98, transition: { duration: 0.15 } }}
-              transition={{ type: 'spring', damping: 24, stiffness: 320, mass: 0.75 }}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.12 } }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               style={{ willChange: 'transform, opacity', transform: 'translateZ(0)' }}
               className="w-full max-w-xl flex flex-col gap-2 mb-5 sm:mb-6"
             >
-              <div className="relative overflow-hidden w-full rounded-[22px] sm:rounded-[32px] bg-white/[0.22] backdrop-blur-[36px] -webkit-backdrop-blur-[36px] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.18),inset_0_1px_1.5px_rgba(255,255,255,0.85),inset_0_-1px_1px_rgba(0,0,0,0.06)] px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between gap-3 sm:gap-4">
+              <div className="relative overflow-hidden w-full rounded-[22px] sm:rounded-[32px] bg-white/[0.22] backdrop-blur-[36px] -webkit-backdrop-blur-[36px] border border-white/50 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between gap-3 sm:gap-4">
                 {/* Top Glass Specular Arc Reflection */}
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-[45%] rounded-t-[22px] sm:rounded-t-[32px] bg-gradient-to-b from-white/40 via-white/10 to-transparent" />
 
                 <div className="relative z-10 flex items-center gap-2.5 sm:gap-4 overflow-hidden min-w-0">
-                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white/20 border border-white/50 flex items-center justify-center shrink-0 shadow-[inset_0_1px_1px_rgba(255,255,255,0.7)] text-white">
+                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white/20 border border-white/50 flex items-center justify-center shrink-0 text-white">
                     <i className="f7-icons text-base sm:text-xl text-sky-100 leading-none">lock_fill</i>
                   </div>
                   <div className="flex flex-col min-w-0">
-                    <span className="text-[10px] sm:text-[11px] text-sky-200/90 uppercase font-semibold tracking-wider drop-shadow-sm truncate">Access Token</span>
-                    <span className="font-mono font-bold text-xs sm:text-base md:text-lg text-white truncate tracking-wide drop-shadow-sm">
+                    <span className="text-[10px] sm:text-[11px] text-sky-200/90 uppercase font-semibold tracking-wider truncate">Access Token</span>
+                    <span className="font-mono font-bold text-xs sm:text-base md:text-lg text-white truncate tracking-wide">
                       {extractedKey}
                     </span>
                   </div>
@@ -484,6 +614,95 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Liquid Glass Recent Keys History (Last 5) */}
+        {keyHistory.length > 0 && (
+          <div className="w-full max-w-xl flex flex-col items-center mt-3 sm:mt-4">
+            {/* Header Trigger Pill */}
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((prev) => !prev)}
+              className="group flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.12] hover:bg-white/[0.2] border border-white/25 backdrop-blur-[20px] -webkit-backdrop-blur-[20px] transition-all cursor-pointer select-none text-white text-xs font-medium active:scale-95"
+            >
+              <i className="f7-icons text-xs text-sky-200 leading-none">clock_fill</i>
+              <span>Recent Keys ({keyHistory.length})</span>
+              <i className={`f7-icons text-[10px] text-white/70 transition-transform duration-200 ${historyOpen ? 'rotate-180' : ''}`}>
+                chevron_down
+              </i>
+            </button>
+
+            {/* Expandable Liquid Glass History Drawer */}
+            <AnimatePresence>
+              {historyOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                  exit={{ opacity: 0, height: 0, scale: 0.98 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="w-full overflow-hidden mt-2.5"
+                >
+                  <div className="relative overflow-hidden w-full rounded-[22px] sm:rounded-[28px] bg-white/[0.16] backdrop-blur-[36px] -webkit-backdrop-blur-[36px] border border-white/40 p-3.5 sm:p-4 flex flex-col gap-2">
+                    {/* Top Glass Specular Arc Reflection */}
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-[40%] rounded-t-[22px] sm:rounded-t-[28px] bg-gradient-to-b from-white/35 via-white/10 to-transparent" />
+
+                    <div className="relative z-10 flex items-center justify-between pb-1.5 border-b border-white/15 px-1">
+                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-sky-200/90">
+                        Last Generated Keys
+                      </span>
+                      <button
+                        type="button"
+                        onClick={clearHistory}
+                        className="text-[11px] text-white/60 hover:text-white transition-colors cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    {/* Key Items */}
+                    <div className="relative z-10 flex flex-col gap-1.5">
+                      {keyHistory.map((item) => {
+                        const isThisCopied = copiedHistoryKey === item.key;
+                        return (
+                          <div
+                            key={item.key + item.timestamp}
+                            className="flex items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl bg-white/[0.12] hover:bg-white/[0.18] border border-white/20 transition-all group"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <span className="font-mono text-xs sm:text-sm font-bold text-white tracking-wide truncate select-all">
+                                {item.key}
+                              </span>
+                              <span className="text-[10px] text-sky-200/80 bg-white/10 px-1.5 py-0.5 rounded-md shrink-0">
+                                {formatRelativeTime(item.timestamp)}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopyHistoryItem(item.key)}
+                              className="px-2.5 sm:px-3 py-1 rounded-full bg-white/25 hover:bg-white text-white hover:text-slate-900 text-[11px] font-semibold border border-white/40 hover:border-transparent transition-all shrink-0 flex items-center gap-1 active:scale-95 cursor-pointer"
+                            >
+                              {isThisCopied ? (
+                                <>
+                                  <i className="f7-icons text-[11px] text-emerald-600 font-bold leading-none">checkmark</i>
+                                  <span className="text-emerald-700">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <i className="f7-icons text-[11px] leading-none">doc_on_doc_fill</i>
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </main>
     </div>
   );

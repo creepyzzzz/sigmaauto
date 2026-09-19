@@ -193,7 +193,7 @@ export default function HangingKeys() {
         <span className="absolute -bottom-[5px] -left-[6px] w-[9px] h-[9px] rounded-full bg-white pointer-events-none" />
 
         {/* The Text 'keys' */}
-        <span className="relative z-10 text-4xl sm:text-6xl md:text-7xl lg:text-[76px] font-bold tracking-tight text-white drop-shadow-sm inline-block">
+        <span className="relative z-10 text-[2.1rem] xs:text-4xl sm:text-6xl md:text-7xl lg:text-[76px] font-bold tracking-tight text-white drop-shadow-sm inline-block">
           keys
         </span>
       </motion.span>

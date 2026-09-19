@@ -28,19 +28,10 @@ export default function LiquidMorphButton({ hasUrl, loading, onClick }: LiquidMo
         </defs>
       </svg>
 
-      <motion.button
-        layout
+      <button
         type="button"
         onClick={onClick}
         disabled={loading}
-        transition={{
-          layout: {
-            type: 'spring',
-            stiffness: 220,
-            damping: 26,
-            mass: 0.95,
-          },
-        }}
         className="relative overflow-hidden bg-white hover:bg-white/95 active:scale-95 text-slate-900 font-semibold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm shadow-[0_2px_12px_rgba(255,255,255,0.22)] hover:shadow-[0_3px_16px_rgba(255,255,255,0.35)] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap cursor-pointer shrink-0 min-h-[36px] sm:min-h-[42px]"
       >
         {/* In-place Gooey Liquid Morphing Container */}
@@ -83,7 +74,7 @@ export default function LiquidMorphButton({ hasUrl, loading, onClick }: LiquidMo
             )}
           </AnimatePresence>
         </div>
-      </motion.button>
+      </button>
     </>
   );
 }
