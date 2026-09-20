@@ -130,22 +130,8 @@ async function proxyFetch(
     });
     return res;
   } catch (err: any) {
-    console.warn(`[ProxyFetch] Cloudflare proxy failed, falling back to direct fetch:`, err?.message);
-    const directHeaders: Record<string, string> = {
-      "User-Agent": DEFAULT_BROWSER_USER_AGENT,
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-    };
-    if (options.targetReferer) directHeaders["Referer"] = options.targetReferer;
-    if (options.targetCookie) directHeaders["Cookie"] = options.targetCookie;
-    if (options.contentType) directHeaders["Content-Type"] = options.contentType;
-
-    return fetch(targetUrl, {
-      method: options.method || "GET",
-      headers: directHeaders,
-      body: options.body,
-      redirect: (options.redirectMode as any) || "manual",
-    });
+    console.error(`[ProxyFetch] Cloudflare proxy failed for ${targetUrl}:`, err?.message);
+    throw new Error(`Proxy request failed: ${err?.message}`);
   }
 }
 
