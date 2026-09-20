@@ -21,7 +21,7 @@ export async function clientProxyFetch(
     body?: string;
   } = {}
 ): Promise<{ status: number; text: () => Promise<string>; json: () => Promise<any>; headers: Headers }> {
-  const proxyEndpoint = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+  const proxyEndpoint = `${CLOUDFLARE_PROXY_URL.replace(/\/+$/, '')}?url=${encodeURIComponent(targetUrl)}`;
   const headers: Record<string, string> = {};
 
   if (options.targetReferer) headers['x-target-referer'] = options.targetReferer;

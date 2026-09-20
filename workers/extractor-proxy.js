@@ -2,20 +2,20 @@
  * Keyo Cloudflare Worker Edge Proxy
  */
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Expose-Headers": "*",
+};
+
 export default {
   async fetch(request, env, ctx) {
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*",
-      "Access-Control-Expose-Headers": "*",
-    };
-
     // 1. Handle CORS Preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: corsHeaders,
+        headers: CORS_HEADERS,
       });
     }
 
@@ -28,7 +28,7 @@ export default {
           status: 400,
           headers: {
             "Content-Type": "application/json",
-            ...corsHeaders,
+            ...CORS_HEADERS,
           },
         });
       }
@@ -72,34 +72,34 @@ export default {
 
       const upstream = await fetch(targetUrl, init);
 
-      // Clone response to avoid immutable header issues in Cloudflare Worker
-      const finalResponse = new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-      });
+      // Read as ArrayBuffer to break raw stream passthrough and force header application
+      const bodyBuffer = await upstream.arrayBuffer();
 
-      // Copy necessary upstream headers
+      const outHeaders = new Headers();
       for (const [k, v] of upstream.headers.entries()) {
         const lower = k.toLowerCase();
         if (lower === "content-encoding" || lower === "content-length") continue;
         try {
-          finalResponse.headers.set(k, v);
+          outHeaders.set(k, v);
         } catch {}
       }
 
-      // Guarantee CORS headers
-      finalResponse.headers.set("Access-Control-Allow-Origin", "*");
-      finalResponse.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      finalResponse.headers.set("Access-Control-Allow-Headers", "*");
-      finalResponse.headers.set("Access-Control-Expose-Headers", "*");
+      // Force CORS headers
+      for (const [k, v] of Object.entries(CORS_HEADERS)) {
+        outHeaders.set(k, v);
+      }
 
-      return finalResponse;
+      return new Response(bodyBuffer, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: outHeaders,
+      });
     } catch (err) {
       return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
         headers: {
           "Content-Type": "application/json",
-          ...corsHeaders,
+          ...CORS_HEADERS,
         },
       });
     }
