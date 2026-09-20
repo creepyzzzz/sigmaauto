@@ -7,7 +7,7 @@ const CLOUDFLARE_PROXY_URL =
   process.env.CLOUDFLARE_PROXY_URL ||
   'https://royal-bar-c2da.tariqmir1278.workers.dev';
 
-export async function ALL(req: NextRequest) {
+async function handleProxy(req: NextRequest) {
   try {
     const url = req.nextUrl.searchParams.get('url');
     if (!url) {
@@ -59,6 +59,14 @@ export async function ALL(req: NextRequest) {
   }
 }
 
-export const GET = ALL;
-export const POST = ALL;
-export const OPTIONS = ALL;
+export async function GET(req: NextRequest) {
+  return handleProxy(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handleProxy(req);
+}
+
+export async function OPTIONS(req: NextRequest) {
+  return handleProxy(req);
+}
