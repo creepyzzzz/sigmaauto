@@ -273,7 +273,7 @@ export async function handleLksfy(
       if (finalTg) {
         return { success: true, key: finalTg, url: keyUrl, source: "Telegram" };
       }
-      return { success: false, error: "Could not locate challenge token on page." };
+      return { success: false, error: "Could not locate challenge token on page.", debug: { htmlSnippet: html.slice(0, 600), htmlLength: html.length, cookies: cookieHeader, redirectUrl, refererUrl, r1Status: r1.status, r2Status: r2.status } } as any;
     }
 
     console.log(`[Extractor:Lksfy] Found base64 challenge token (length: ${base64Val.length})`);
