@@ -114,25 +114,61 @@ async function proxyFetch(
     body?: string;
   } = {}
 ): Promise<{ status: number; text: () => Promise<string>; json: () => Promise<any>; headers: Headers }> {
-  const proxyEndpoint = `${CLOUDFLARE_PROXY_URL.replace(/\/+$/, "")}?url=${encodeURIComponent(targetUrl)}`;
-  const headers: Record<string, string> = {};
+  const directHeaders: Record<string, string> = {
+    "User-Agent": DEFAULT_BROWSER_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Sec-Ch-Ua": '"Not A(Brand";v="8", "Chromium";v="133", "Google Chrome";v="133"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+  };
+  if (options.targetReferer) directHeaders["Referer"] = options.targetReferer;
+  if (options.targetCookie) directHeaders["Cookie"] = options.targetCookie;
+  if (options.contentType) directHeaders["Content-Type"] = options.contentType;
 
-  if (options.targetReferer) headers["x-target-referer"] = options.targetReferer;
-  if (options.targetCookie) headers["x-target-cookie"] = options.targetCookie;
-  if (options.redirectMode) headers["x-redirect-mode"] = options.redirectMode;
-  if (options.contentType) headers["Content-Type"] = options.contentType;
-
+  // Strategy 1: Try Cloudflare Worker proxy
   try {
+    const proxyEndpoint = `${CLOUDFLARE_PROXY_URL.replace(/\/+$/, "")}?url=${encodeURIComponent(targetUrl)}`;
+    const proxyHeaders: Record<string, string> = {};
+    if (options.targetReferer) proxyHeaders["x-target-referer"] = options.targetReferer;
+    if (options.targetCookie) proxyHeaders["x-target-cookie"] = options.targetCookie;
+    if (options.redirectMode) proxyHeaders["x-redirect-mode"] = options.redirectMode;
+    if (options.contentType) proxyHeaders["Content-Type"] = options.contentType;
+
     const res = await fetch(proxyEndpoint, {
       method: options.method || "GET",
-      headers,
+      headers: proxyHeaders,
       body: options.body,
     });
-    return res;
+
+    // If proxy returns a Cloudflare challenge (403 "Just a moment"), fall through to direct
+    if (res.status === 403) {
+      const body = await res.text();
+      if (body.includes("Just a moment") || body.includes("challenges.cloudflare.com")) {
+        console.warn(`[ProxyFetch] Cloudflare challenge detected via proxy for ${targetUrl}, trying direct fetch`);
+      } else {
+        return { status: 403, text: async () => body, json: async () => JSON.parse(body), headers: res.headers };
+      }
+    } else {
+      return res;
+    }
   } catch (err: any) {
-    console.error(`[ProxyFetch] Cloudflare proxy failed for ${targetUrl}:`, err?.message);
-    throw new Error(`Proxy request failed: ${err?.message}`);
+    console.warn(`[ProxyFetch] Proxy error for ${targetUrl}: ${err?.message}, trying direct fetch`);
   }
+
+  // Strategy 2: Direct fetch with full browser headers (bypasses CF-to-CF challenge)
+  console.log(`[ProxyFetch] Direct fetch fallback for ${targetUrl}`);
+  return fetch(targetUrl, {
+    method: options.method || "GET",
+    headers: directHeaders,
+    body: options.body,
+    redirect: (options.redirectMode as any) || "manual",
+  });
 }
 
 export async function handleLksfy(
