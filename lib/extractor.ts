@@ -571,8 +571,8 @@ export async function autoGenerateKey(
       try {
         onProgress?.(`Generating auth session key (server ${serverId})...`);
         const genUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/auth/generate?server=${serverId}`;
-        const genResp = await fetch(genUrl, {
-          headers: { "User-Agent": DEFAULT_APP_USER_AGENT },
+        const genResp = await proxyFetch(genUrl, {
+          targetReferer: baseUrl,
         });
         const genJson = await genResp.json();
 
