@@ -8,6 +8,7 @@ import HumanTypingPlaceholder from '@/components/HumanTypingPlaceholder';
 import AmbientParallaxKeys from '@/components/AmbientParallaxKeys';
 import SmartClipboardDetector from '@/components/SmartClipboardDetector';
 import LiquidMorphButton from '@/components/LiquidMorphButton';
+import { executeClientLksfyFlow } from '@/lib/client-extractor';
 
 export interface KeyHistoryItem {
   key: string;
@@ -146,7 +147,49 @@ export default function Home() {
     setSubStatusMessage('Please wait while we process your request.');
 
     try {
-      const endpoint = isAuto ? '/api/auto-generate' : '/api/extract';
+      if (isAuto) {
+        setStatusMessage('Auto-Generating Key...');
+        setSubStatusMessage('Contacting discovery service...');
+
+        // Step 1: Server discovers the key URL
+        const discoverResp = await fetch('/api/auto-generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phase: 'discover' }),
+        });
+        const discoverJson = await discoverResp.json();
+
+        if (!discoverJson.success || !discoverJson.keyUrl) {
+          throw new Error(discoverJson.error || 'Failed to initialize session with discovery server.');
+        }
+
+        const { keyUrl, alias } = discoverJson;
+
+        // Step 2-5: Execute client-side bypass & token decryption
+        const clientResult = await executeClientLksfyFlow(keyUrl, alias, (step, count) => {
+          if (step) setSubStatusMessage(step);
+          if (count !== undefined) {
+            setCountdown(count);
+          } else {
+            setCountdown(null);
+          }
+        });
+
+        if (clientResult.success && clientResult.key) {
+          setExtractedKey(clientResult.key);
+          if (clientResult.associatedUrl) setAssociatedUrl(clientResult.associatedUrl);
+          saveKeyToHistory(clientResult.key, 'Auto', clientResult.associatedUrl);
+          setLoading(false);
+          setCountdown(null);
+          triggerConfetti();
+          return;
+        } else {
+          throw new Error(clientResult.error || 'Failed to auto-generate key.');
+        }
+      }
+
+      // Custom link extraction flow (/api/extract)
+      const endpoint = '/api/extract';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

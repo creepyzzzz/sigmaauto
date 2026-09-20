@@ -101,7 +101,7 @@ export function extractFormData(html: string) {
   };
 }
 
-const CLOUDFLARE_PROXY_URL = process.env.CLOUDFLARE_PROXY_URL || "https://royal-bar-c2da.tariqmir1278.workers.dev";
+export const CLOUDFLARE_PROXY_URL = process.env.CLOUDFLARE_PROXY_URL || "https://royal-bar-c2da.tariqmir1278.workers.dev";
 
 async function proxyFetch(
   targetUrl: string,
@@ -617,8 +617,111 @@ export async function autoGenerateKey(
       }
     }
 
-    return lastResult || { success: false, error: lastError };
+  return lastResult || { success: false, error: lastError };
   } catch (err: any) {
     return { success: false, error: err?.message || "Auto-generation discovery failed." };
   }
+}
+
+// ─── Phased extraction for client-side lksfy bypass ───
+
+/**
+ * Phase 1: Server discovers the keyUrl from the upstream API.
+ * Returns keyUrl + alias for client-side lksfy extraction.
+ */
+export async function discoverKeyUrl(): Promise<{ success: boolean; keyUrl?: string; alias?: string; error?: string }> {
+  try {
+    const r = await proxyFetch(DEFAULT_TARGET, { targetReferer: DEFAULT_TARGET });
+    const headerNames = ["x-request-id", "x-payload", "authorization", "x-data"];
+    let combined = "";
+    for (const hn of headerNames) {
+      const val = r.headers.get(hn);
+      if (val) combined += val.trim();
+    }
+    if (!combined) return { success: false, error: "Failed to retrieve discovery headers." };
+
+    const decodedBytes = Buffer.from(combined, "base64");
+    const keyBytes = Buffer.from(XOR_KEY, "utf8");
+    const outBytes = Buffer.alloc(decodedBytes.length);
+    for (let i = 0; i < decodedBytes.length; i++) {
+      outBytes[i] = decodedBytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+
+    let jsonStr = outBytes.toString("utf8");
+    let baseObj: any;
+    try { baseObj = JSON.parse(jsonStr); } catch {
+      const s = jsonStr.indexOf("{"), e = jsonStr.lastIndexOf("}");
+      if (s !== -1 && e !== -1) baseObj = JSON.parse(jsonStr.substring(s, e + 1));
+    }
+
+    const baseUrl = baseObj?.baseUrl || baseObj?.baseurl || baseObj?.base_url;
+    if (!baseUrl) return { success: false, error: "Could not locate baseUrl." };
+
+    for (const serverId of [1, 2, 3]) {
+      try {
+        const genUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/auth/generate?server=${serverId}`;
+        const genResp = await proxyFetch(genUrl, { targetReferer: baseUrl });
+        const genJson = await genResp.json();
+        const keyUrl = genJson?.data?.keyUrl;
+        if (keyUrl) {
+          const alias = new URL(keyUrl).pathname.replace(/^\/+|\/+$/g, "").split("/").pop() || "";
+          return { success: true, keyUrl, alias };
+        }
+      } catch {}
+    }
+    return { success: false, error: "All servers failed to return keyUrl." };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Discovery failed." };
+  }
+}
+
+/**
+ * Phase 3: Server decrypts the base64 challenge token extracted by the client.
+ * Returns the form data needed for the lksfy POST.
+ */
+export function decryptChallengeToken(base64Token: string, alias: string): {
+  success: boolean;
+  formAction?: string;
+  csrfToken?: string;
+  adFormData?: string;
+  tokenFields?: string;
+  tokenUnlocked?: string;
+  error?: string;
+} {
+  const decryptedHtml = decryptAesCbc(base64Token, alias);
+  if (!decryptedHtml) return { success: false, error: "Failed to decrypt challenge token." };
+
+  const formData = extractFormData(decryptedHtml);
+  if (!formData.action || !formData.csrfToken) return { success: false, error: "Incomplete form parameters." };
+
+  return {
+    success: true,
+    formAction: formData.action,
+    csrfToken: formData.csrfToken,
+    adFormData: formData.adFormData,
+    tokenFields: formData.tokenFields,
+    tokenUnlocked: formData.tokenUnlocked,
+  };
+}
+
+/**
+ * Phase 5: Server decrypts the encrypted final URL returned by the lksfy POST.
+ * Returns the extracted key.
+ */
+export function decryptFinalUrl(encryptedUrl: string, alias: string): ExtractionResult {
+  const finalUrl = decryptAesCbc(encryptedUrl, alias);
+  if (!finalUrl) return { success: false, error: "Failed to decrypt final URL." };
+
+  const tgKey = extractTelegramKey(finalUrl);
+  if (tgKey) return { success: true, key: tgKey, url: finalUrl, associatedUrl: finalUrl, source: "Telegram" };
+
+  try {
+    const finalParsed = new URL(finalUrl);
+    const key = finalParsed.searchParams.get("key")?.trim()
+      || finalParsed.searchParams.get("code")?.trim()
+      || finalParsed.searchParams.get("token")?.trim();
+    if (key) return { success: true, key, url: finalUrl, source: "Lksfy" };
+  } catch {}
+
+  return { success: false, error: "Key not found in destination URL.", url: finalUrl };
 }

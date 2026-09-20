@@ -37,9 +37,17 @@ export default {
       headers.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36");
       headers.set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
       headers.set("Accept-Language", "en-US,en;q=0.9");
+      headers.set("Accept-Encoding", "gzip, deflate, br");
       headers.set("Sec-Ch-Ua", '"Not A(Brand";v="8", "Chromium";v="133", "Google Chrome";v="133"');
       headers.set("Sec-Ch-Ua-Mobile", "?0");
       headers.set("Sec-Ch-Ua-Platform", '"Windows"');
+      headers.set("Sec-Fetch-Dest", "document");
+      headers.set("Sec-Fetch-Mode", "navigate");
+      headers.set("Sec-Fetch-Site", "none");
+      headers.set("Sec-Fetch-User", "?1");
+      headers.set("Upgrade-Insecure-Requests", "1");
+      headers.set("Cache-Control", "max-age=0");
+      headers.set("Connection", "keep-alive");
 
       // Forward Referer and Cookie
       const incomingReferer = request.headers.get("x-target-referer") || `${parsedTarget.origin}/`;
