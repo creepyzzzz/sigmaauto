@@ -6,16 +6,20 @@
  * and handles JS redirects + AJAX POST verification.
  */
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Expose-Headers": "*",
+};
+
 export default {
   async fetch(request, env, ctx) {
     // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "*",
-        },
+        status: 204,
+        headers: CORS_HEADERS,
       });
     }
 
@@ -26,7 +30,10 @@ export default {
       if (!targetUrl) {
         return new Response(JSON.stringify({ error: "Missing 'url' query parameter" }), {
           status: 400,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          headers: {
+            "Content-Type": "application/json",
+            ...CORS_HEADERS,
+          },
         });
       }
 
@@ -73,10 +80,18 @@ export default {
 
       const response = await fetch(targetUrl, init);
 
-      // Forward response headers and body back to Keyo
-      const responseHeaders = new Headers(response.headers);
-      responseHeaders.set("Access-Control-Allow-Origin", "*");
-      responseHeaders.set("Access-Control-Expose-Headers", "*");
+      // Build clean response headers with mandatory CORS
+      const responseHeaders = new Headers();
+      for (const [k, v] of response.headers.entries()) {
+        // Skip content-encoding if CF decompresses it
+        if (k.toLowerCase() === "content-encoding") continue;
+        responseHeaders.append(k, v);
+      }
+
+      // Explicitly overwrite CORS headers
+      for (const [k, v] of Object.entries(CORS_HEADERS)) {
+        responseHeaders.set(k, v);
+      }
 
       return new Response(response.body, {
         status: response.status,
@@ -85,7 +100,10 @@ export default {
     } catch (err) {
       return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        headers: {
+          "Content-Type": "application/json",
+          ...CORS_HEADERS,
+        },
       });
     }
   },
