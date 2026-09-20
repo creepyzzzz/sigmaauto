@@ -552,6 +552,7 @@ export async function autoGenerateKey(
     // Try server 1, then fallback to server 2, then server 3
     const servers = [1, 2, 3];
     let lastError = "Auto-generation discovery failed.";
+    let lastResult: any = null;
 
     for (const serverId of servers) {
       try {
@@ -574,12 +575,13 @@ export async function autoGenerateKey(
           return result;
         }
         lastError = result.error || lastError;
+        lastResult = result;
       } catch (err: any) {
         lastError = err?.message || lastError;
       }
     }
 
-    return { success: false, error: lastError };
+    return lastResult || { success: false, error: lastError };
   } catch (err: any) {
     return { success: false, error: err?.message || "Auto-generation discovery failed." };
   }
