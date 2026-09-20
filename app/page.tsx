@@ -147,26 +147,41 @@ export default function Home() {
     setSubStatusMessage('Please wait while we process your request.');
 
     try {
-      if (isAuto) {
-        setStatusMessage('Auto-Generating Key...');
-        setSubStatusMessage('Contacting discovery service...');
+      const isLksfy = linkToProcess.toLowerCase().includes('lksfy');
 
-        // Step 1: Server discovers the key URL
-        const discoverResp = await fetch('/api/auto-generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phase: 'discover' }),
-        });
-        const discoverJson = await discoverResp.json();
+      if (isAuto || isLksfy) {
+        let targetKeyUrl = linkToProcess.trim();
+        let targetAlias = '';
 
-        if (!discoverJson.success || !discoverJson.keyUrl) {
-          throw new Error(discoverJson.error || 'Failed to initialize session with discovery server.');
+        if (isAuto) {
+          setStatusMessage('Auto-Generating Key...');
+          setSubStatusMessage('Contacting discovery service...');
+
+          // Step 1: Server discovers the key URL
+          const discoverResp = await fetch('/api/auto-generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phase: 'discover' }),
+          });
+          const discoverJson = await discoverResp.json();
+
+          if (!discoverJson.success || !discoverJson.keyUrl) {
+            throw new Error(discoverJson.error || 'Failed to initialize session with discovery server.');
+          }
+
+          targetKeyUrl = discoverJson.keyUrl;
+          targetAlias = discoverJson.alias || '';
+        } else {
+          try {
+            const parsed = new URL(targetKeyUrl);
+            targetAlias = parsed.pathname.replace(/^\/+|\/+$/g, '').split('/').pop() || '';
+          } catch {}
+          setStatusMessage('Extracting key...');
+          setSubStatusMessage('Resolving shortener redirect...');
         }
 
-        const { keyUrl, alias } = discoverJson;
-
         // Step 2-5: Execute client-side bypass & token decryption
-        const clientResult = await executeClientLksfyFlow(keyUrl, alias, (step, count) => {
+        const clientResult = await executeClientLksfyFlow(targetKeyUrl, targetAlias, (step, count) => {
           if (step) setSubStatusMessage(step);
           if (count !== undefined) {
             setCountdown(count);
@@ -178,17 +193,17 @@ export default function Home() {
         if (clientResult.success && clientResult.key) {
           setExtractedKey(clientResult.key);
           if (clientResult.associatedUrl) setAssociatedUrl(clientResult.associatedUrl);
-          saveKeyToHistory(clientResult.key, 'Auto', clientResult.associatedUrl);
+          saveKeyToHistory(clientResult.key, isAuto ? 'Auto' : 'Link', clientResult.associatedUrl);
           setLoading(false);
           setCountdown(null);
           triggerConfetti();
           return;
         } else {
-          throw new Error(clientResult.error || 'Failed to auto-generate key.');
+          throw new Error(clientResult.error || 'Failed to extract key.');
         }
       }
 
-      // Custom link extraction flow (/api/extract)
+      // Custom link extraction flow for non-lksfy links (/api/extract)
       const endpoint = '/api/extract';
       const response = await fetch(endpoint, {
         method: 'POST',
