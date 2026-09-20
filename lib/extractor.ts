@@ -522,8 +522,8 @@ export async function autoGenerateKey(
   try {
     onProgress?.("Contacting discovery endpoint...");
 
-    const r = await fetch(DEFAULT_TARGET, {
-      headers: { "User-Agent": DEFAULT_APP_USER_AGENT },
+    const r = await proxyFetch(DEFAULT_TARGET, {
+      targetReferer: DEFAULT_TARGET,
     });
 
     const headerNames = ["x-request-id", "x-payload", "authorization", "x-data"];
