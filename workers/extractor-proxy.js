@@ -84,14 +84,30 @@ export default {
         } catch {}
       }
 
+      // Forward Set-Cookie via custom header (browsers block Set-Cookie on cross-origin)
+      const setCookieVal = upstream.headers.get("set-cookie");
+      if (setCookieVal) {
+        outHeaders.set("x-proxied-set-cookie", setCookieVal);
+      }
+
       // Force CORS headers
       for (const [k, v] of Object.entries(CORS_HEADERS)) {
         outHeaders.set(k, v);
       }
 
+      // When redirect mode is manual and upstream returned a 3xx, override to 200
+      // so the browser doesn't chase the redirect into a CORS-blocked domain.
+      let responseStatus = upstream.status;
+      let responseStatusText = upstream.statusText;
+      if (redirectMode === "manual" && upstream.status >= 300 && upstream.status < 400) {
+        outHeaders.set("x-original-status", String(upstream.status));
+        responseStatus = 200;
+        responseStatusText = "OK";
+      }
+
       return new Response(bodyBuffer, {
-        status: upstream.status,
-        statusText: upstream.statusText,
+        status: responseStatus,
+        statusText: responseStatusText,
         headers: outHeaders,
       });
     } catch (err) {

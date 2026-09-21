@@ -77,6 +77,11 @@ export async function executeClientLksfyFlow(
       const single = r1.headers.get("set-cookie");
       if (single) cookies = [single];
     }
+    // Fallback: read from custom proxy header (browsers block Set-Cookie on cross-origin)
+    if (!cookies.length) {
+      const proxied = r1.headers.get("x-proxied-set-cookie");
+      if (proxied) cookies = [proxied];
+    }
     const cookieHeader = cookies.map((c) => c.split(";")[0].trim()).join("; ");
 
     let redirectUrl = r1.headers.get("location");
